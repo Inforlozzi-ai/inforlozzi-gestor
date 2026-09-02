@@ -1,0 +1,2 @@
+ALTER TABLE iptv_clients 
+ADD COLUMN IF NOT EXISTS plan_value DECIMAL(10,2) DEFAULT 0;

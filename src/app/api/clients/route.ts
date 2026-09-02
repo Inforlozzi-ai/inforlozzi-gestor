@@ -14,8 +14,9 @@ export async function GET() {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data }, {
+      headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' }
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -24,40 +25,28 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { 
-      name, 
-      phone, 
-      email, 
-      xtream_username, 
-      xtream_password, 
-      status = 'active',
-      panel_name,
-      devices = [],
-      expiration_date,
-      photo_url
-    } = body;
+    console.log(' Criando cliente:', body);
+    
+    const { name, phone, email, xtream_username, xtream_password, status = 'active', panel_name, devices = [], expiration_date, photo_url, plan_name } = body;
 
     const { data, error } = await supabase
       .from('iptv_clients')
       .insert({
-        name,
-        phone,
-        email,
-        xtream_username,
-        xtream_password,
-        status,
-        panel_name,
-        devices,
-        expiration_date,
-        photo_url
+        name, phone, email, xtream_username, xtream_password, status,
+        panel_name, devices, expiration_date, photo_url, plan_name
       })
       .select()
       .single();
 
-    if (error) throw error;
-
+    if (error) {
+      console.error('❌ Erro ao criar:', error);
+      throw error;
+    }
+    
+    console.log('✅ Cliente criado:', data);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
+    console.error('Erro final:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

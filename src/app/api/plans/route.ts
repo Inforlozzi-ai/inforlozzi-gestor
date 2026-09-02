@@ -11,26 +11,47 @@ export async function GET() {
     const { data, error } = await supabase
       .from('iptv_plans')
       .select('*')
-      .eq('is_active', true)
-      .order('name');
+      .order('created_at', { ascending: false });
+
     if (error) throw error;
-    return NextResponse.json({ success: true, data });
+    
+    return NextResponse.json({ success: true, data }, {
+      headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' }
+    });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    console.log(' Criando plano:', body);
+    
+    // Converter duração para dias (se for meses, multiplica por 30)
+    const durationDays = parseInt(body.duration_days) || 30;
+    const durationType = body.duration_type || 'days';
+    const finalDays = durationType === 'months' ? durationDays * 30 : durationDays;
+    
     const { data, error } = await supabase
       .from('iptv_plans')
-      .insert(body)
+      .insert({
+        name: body.name,
+        price: parseFloat(body.price) || 0,
+        duration_days: finalDays
+      })
       .select()
       .single();
-    if (error) throw error;
+
+    if (error) {
+      console.error('❌ Erro ao criar plano:', error);
+      throw error;
+    }
+    
+    console.log('✅ Plano criado:', data);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('Erro final:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

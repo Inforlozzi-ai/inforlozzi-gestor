@@ -11,16 +11,26 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const body = await request.json();
     
-    console.log('📥 Atualizando cliente:', id, body);
+    console.log('📝 Atualizando plano:', id, body);
     
-    // Remover campos que não existem ou não devem ser atualizados
-    const { plan_id, updated_at, created_at, id: clientId, plan_value, ...dataToSave } = body;
+    const { id: planId, created_at, updated_at, ...dataToSave } = body;
     
-    console.log('📦 Dados limpos:', dataToSave);
+    const cleanData: any = {};
+    if (dataToSave.name !== undefined) cleanData.name = dataToSave.name;
+    if (dataToSave.price !== undefined) cleanData.price = parseFloat(dataToSave.price) || 0;
+    
+    // Converter duração para dias
+    if (dataToSave.duration_days !== undefined) {
+      const durationDays = parseInt(dataToSave.duration_days) || 30;
+      const durationType = dataToSave.duration_type || 'days';
+      cleanData.duration_days = durationType === 'months' ? durationDays * 30 : durationDays;
+    }
+    
+    console.log('📦 Dados limpos:', cleanData);
     
     const { data, error } = await supabase
-      .from('iptv_clients')
-      .update(dataToSave)
+      .from('iptv_plans')
+      .update(cleanData)
       .eq('id', id)
       .select()
       .single();
@@ -41,7 +51,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { error } = await supabase.from('iptv_clients').delete().eq('id', id);
+    const { error } = await supabase.from('iptv_plans').delete().eq('id', id);
     if (error) throw error;
     return NextResponse.json({ success: true });
   } catch (error: any) {
