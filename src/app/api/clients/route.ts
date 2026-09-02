@@ -12,24 +12,52 @@ export async function GET() {
       .from('iptv_clients')
       .select('*')
       .order('created_at', { ascending: false });
+
     if (error) throw error;
+
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const { 
+      name, 
+      phone, 
+      email, 
+      xtream_username, 
+      xtream_password, 
+      status = 'active',
+      panel_name,
+      devices = [],
+      expiration_date,
+      photo_url
+    } = body;
+
     const { data, error } = await supabase
       .from('iptv_clients')
-      .insert(body)
+      .insert({
+        name,
+        phone,
+        email,
+        xtream_username,
+        xtream_password,
+        status,
+        panel_name,
+        devices,
+        expiration_date,
+        photo_url
+      })
       .select()
       .single();
+
     if (error) throw error;
+
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
