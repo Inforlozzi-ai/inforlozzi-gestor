@@ -9,9 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.109.0",
+    "@types/papaparse": "^5.5.2",
+    "axios": "^1.20.0",
+    "lucide-react": "^1.39.0",
+    "mercadopago": "^3.6.0",
     "next": "16.3.4",
+    "papaparse": "^5.7.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
