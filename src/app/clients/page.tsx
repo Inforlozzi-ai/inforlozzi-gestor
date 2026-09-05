@@ -8,6 +8,7 @@ interface Device { app_name: string; mac_address: string; device_id: string; }
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingClient, setEditingClient] = useState<any>(null);
@@ -23,7 +24,7 @@ export default function ClientsPage() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { fetchClients(); fetchPlans(); fetchTemplates(); }, []);
+  useEffect(() => { fetchClients(); fetchPlans(); fetchProducts(); fetchTemplates(); }, []);
 
   const fetchClients = async () => {
     try {
@@ -41,6 +42,14 @@ export default function ClientsPage() {
     } catch (err) { console.error(err); }
   };
 
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('/api/products', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success) setProducts(data.data);
+    } catch (err) { console.error(err); }
+  };
+
   const fetchTemplates = async () => {
     try {
       const res = await fetch('/api/templates', { cache: 'no-store' });
@@ -49,7 +58,6 @@ export default function ClientsPage() {
     } catch (err) { console.error(err); }
   };
 
-  // Função inteligente para exibir duração
   const getDurationText = (days: number): string => {
     if (!days || days <= 0) return '30 dias';
     if (days >= 30 && days % 30 === 0) {
@@ -59,7 +67,6 @@ export default function ClientsPage() {
     return days === 1 ? '1 dia' : `${days} dias`;
   };
 
-  // Buscar valor do plano dinamicamente
   const getPlanValue = (client: any): string => {
     if (!client.plan_name) return 'R$ 0,00';
     const plan = plans.find(p => p.name?.toLowerCase() === client.plan_name?.toLowerCase());
@@ -67,6 +74,14 @@ export default function ClientsPage() {
       return `R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}`;
     }
     return 'R$ 0,00';
+  };
+
+  // Função para formatar data corretamente (sem problema de fuso)
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    // Usar toLocaleDateString com timezone do Brasil
+    return date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -125,29 +140,31 @@ export default function ClientsPage() {
 
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplate(templateId);
-    const template = templates.find(t => t.id === templateId);
     
-    if (template && selectedClient) {
-      let msg = template.message;
+    // Encontrar o template e preencher a mensagem com substituições
+    const template = templates.find(t => t.id === templateId);
+    if (template && template.content && selectedClient) {
       const expDate = selectedClient.expiration_date 
         ? new Date(selectedClient.expiration_date).toLocaleDateString('pt-BR') 
-        : 'Não definido';
+        : 'N/A';
+      const valorPlano = selectedClient.plan?.price || selectedClient.product?.price || '0';
       
-      const valorPlano = getPlanValue(selectedClient);
-      
-      msg = msg
+      let msg = template.content
         .replace(/{nome}/gi, selectedClient.name || 'Cliente')
         .replace(/{usuario}/gi, selectedClient.xtream_username || 'N/A')
         .replace(/{senha}/gi, selectedClient.xtream_password || 'N/A')
         .replace(/{vencimento}/gi, expDate)
         .replace(/{painel}/gi, selectedClient.panel_name || 'N/A')
         .replace(/{valor}/gi, valorPlano)
-        .replace(/{dias}/gi, 'X');
+        .replace(/{dias}/gi, 'X')
+        .replace(/{pix}/gi, '')
+        .replace(/{link}/gi, '')
+        .replace(/{servidor}/gi, '')
+        .replace(/{app_url}/gi, '');
       
       setMessageText(msg);
     }
   };
-
   const handleSendMessage = async () => {
     if (!messageText.trim()) { alert('Mensagem vazia!'); return; }
     setSendingMessage(true);
@@ -240,8 +257,8 @@ export default function ClientsPage() {
                   {client.email && <p>✉️ {client.email}</p>}
                   {client.panel_name && <p>🖥️ {client.panel_name}</p>}
                   {client.plan_name && <p>📦 {client.plan_name}</p>}
-                  {client.expiration_date && <p> {new Date(client.expiration_date).toLocaleDateString('pt-BR')}</p>}
-                  {client.devices && client.devices.length > 0 && <p> {client.devices.length} dispositivo(s)</p>}
+                  {client.expiration_date && <p>📅 {formatDate(client.expiration_date)}</p>}
+                  {client.devices && client.devices.length > 0 && <p>📱 {client.devices.length} dispositivo(s)</p>}
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <button onClick={() => openMessageModal(client)} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg flex justify-center"><MessageSquare className="w-4 h-4" /></button>
@@ -289,7 +306,15 @@ export default function ClientsPage() {
                     {plans.map(plan => (<option key={plan.id} value={plan.id}>{plan.name} - R$ {parseFloat(plan.price).toFixed(2)} ({getDurationText(plan.duration_days)})</option>))}
                   </select>
                 </div>
-                <div><label className="block text-sm font-medium text-gray-300 mb-2">Painel</label><input type="text" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" value={editingClient.panel_name || ''} onChange={e => setEditingClient({...editingClient, panel_name: e.target.value})} /></div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Painel (Produto)</label>
+                  <select className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" value={editingClient.panel_name || ''} onChange={e => setEditingClient({...editingClient, panel_name: e.target.value})}>
+                    <option value="">Selecione um painel...</option>
+                    {products.map(product => (
+                      <option key={product.id} value={product.name}>{product.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

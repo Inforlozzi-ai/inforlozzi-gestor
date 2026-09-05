@@ -1,68 +1,76 @@
 import { NextResponse } from 'next/server';
-import { MercadoPagoConfig, Payment } from 'mercadopago';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export async function POST(request: Request) {
   try {
-    const { clientId, amount, description, dueDate } = await request.json();
+    const body = await request.json();
+    const { access_token, amount, description, external_reference, payer_email, payer_name, expiration_seconds } = body;
 
-    const { data: client, error: clientError } = await supabase
-      .from('iptv_clients')
-      .select('*')
-      .eq('id', clientId)
-      .single();
-
-    if (clientError || !client) {
-      return NextResponse.json({ success: false, error: 'Cliente nao encontrado' }, { status: 404 });
+    if (!access_token) {
+      return NextResponse.json({ error: 'Access Token não configurado' }, { status: 400 });
     }
 
-    const mpClient = new MercadoPagoConfig({
-      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN!,
-    });
-    const payment = new Payment(mpClient);
+    if (!amount || parseFloat(amount) <= 0) {
+      return NextResponse.json({ error: 'Valor inválido' }, { status: 400 });
+    }
 
-    const paymentData = {
+    console.log(`💳 Gerando PIX: R$ ${amount} - ${description}`);
+
+    const expirationDate = new Date(Date.now() + (expiration_seconds || 86400) * 1000).toISOString();
+
+    // Montar o payload base
+    const payload: any = {
       transaction_amount: parseFloat(amount),
-      description: description || 'Cobranca IPTV',
+      description: description || 'Renovação IPTV',
       payment_method_id: 'pix',
       payer: {
-        email: client.email || 'cliente@email.com',
-        first_name: client.name.split(' ')[0],
+        email: payer_email || 'cliente@iptv.com',
+        first_name: payer_name?.split(' ')[0] || 'Cliente',
+        last_name: payer_name?.split(' ').slice(1).join(' ') || 'IPTV'
       },
-      notification_url: process.env.MERCADOPAGO_WEBHOOK_URL,
+      external_reference: external_reference || `iptv-${Date.now()}`,
+      date_of_expiration: expirationDate
     };
 
-    const createdPayment = await payment.create({ body: paymentData });
+    // Adicionar notification_url APENAS se for uma URL válida
+    const webhookUrl = process.env.MERCADO_PAGO_WEBHOOK_URL;
+    if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
+      payload.notification_url = webhookUrl;
+    }
 
-    const qrBase64 = createdPayment.point_of_interaction?.transaction_data?.qr_code_base64;
-    const qrCode = createdPayment.point_of_interaction?.transaction_data?.qr_code;
+    const response = await fetch('https://api.mercadopago.com/v1/payments', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': `iptv-${external_reference || Date.now()}`
+      },
+      body: JSON.stringify(payload)
+    });
 
-    const { data: invoice } = await supabase
-      .from('iptv_invoices')
-      .insert({
-        client_id: clientId,
-        amount: amount,
-        due_date: dueDate,
-        status: 'pending',
-        pix_qr_code: qrBase64,
-        pix_payload: qrCode,
-        payment_gateway_id: createdPayment.id?.toString(),
-        gateway_name: 'mercadopago',
-      })
-      .select()
-      .single();
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Erro Mercado Pago:', data);
+      return NextResponse.json({ 
+        error: data.message || 'Erro ao gerar pagamento',
+        details: data 
+      }, { status: 500 });
+    }
+
+    const pixData = data.point_of_interaction?.transaction_data || {};
+
+    console.log('✅ PIX gerado com sucesso:', data.id);
 
     return NextResponse.json({
       success: true,
-      data: { invoice, qr_code_base64: qrBase64, qr_code: qrCode },
+      payment_id: data.id,
+      status: data.status,
+      qr_code: pixData.qr_code || '',
+      qr_code_base64: pixData.qr_code_base64 || '',
+      ticket_url: pixData.ticket_url || ''
     });
   } catch (error: any) {
-    console.error('Erro ao criar cobranca:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('Erro ao criar PIX:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

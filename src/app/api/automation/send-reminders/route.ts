@@ -6,82 +6,74 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(request: Request) {
+const normalizeTime = (time: string) => time.length >= 5 ? time.substring(0, 5) : time;
+
+export async function GET() {
   try {
-    console.log('🤖 Iniciando automação de cobranças...');
+    console.log('🤖 Verificando automação de lembretes...');
 
-    const { data: invoices, error } = await supabase
-      .from('iptv_invoices')
-      .select('*, iptv_clients(name, phone)')
-      .eq('status', 'pending');
+    const { data: settings } = await supabase
+      .from('billing_settings')
+      .select('*')
+      .limit(1)
+      .single();
 
-    if (error) {
-      console.error('Erro ao buscar cobranças:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!settings) {
+      return NextResponse.json({ error: 'Configurações não encontradas' }, { status: 400 });
     }
 
-    if (!invoices || invoices.length === 0) {
-      return NextResponse.json({ success: true, message: 'Nenhuma cobrança pendente encontrada.' });
+    // Obter horário atual no formato "HH:MM" (Horário de Brasília)
+    const now = new Date();
+    // Ajustar para UTC-3 (Brasília)
+    const brasiliaTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Sao_Paulo"}));
+    const currentTime = `${String(brasiliaTime.getHours()).padStart(2, '0')}:${String(brasiliaTime.getMinutes()).padStart(2, '0')}`;
+    
+    // Normalizar horários configurados
+    const scheduleTimes = (settings.schedule_times || []).map(normalizeTime);
+    
+    console.log(`⏰ Horário atual (Brasília): ${currentTime}`);
+    console.log(`📋 Horários configurados: ${scheduleTimes.join(', ')}`);
+
+    const shouldRun = scheduleTimes.includes(currentTime);
+
+    if (!shouldRun) {
+      console.log(`⏭️ Não é hora de enviar. Aguardando um dos horários: ${scheduleTimes.join(', ')}`);
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Aguardando horário configurado',
+        currentTime,
+        nextRun: scheduleTimes
+      });
     }
 
-    let enviados = 0;
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    console.log(`✅ Horário de envio atingido! Executando...`);
 
-    for (const invoice of invoices) {
-      const dueDate = new Date(invoice.due_date);
-      dueDate.setHours(0, 0, 0, 0);
-      
-      const diffTime = dueDate.getTime() - hoje.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const results: any = { before: 0, on_day: 0, after: 0, errors: 0 };
 
-      // Envia se vencer em até 3 dias, hoje, ou estiver vencido há até 3 dias
-      if (diffDays >= -3 && diffDays <= 3) {
-        const client = invoice.iptv_clients;
-        if (!client?.phone) {
-          console.log(`⚠️ Cliente ${client?.name || 'desconhecido'} sem telefone`);
-          continue;
+    const types = ['before', 'on_day', 'after'];
+
+    for (const type of types) {
+      try {
+        const res = await fetch(`${appUrl}/api/billing/send-now`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type })
+        });
+        const data = await res.json();
+        if (data.success) {
+          results[type] = data.sent;
+          results.errors += data.errors || 0;
+          console.log(`📤 ${type}: ${data.sent} enviadas, ${data.errors} erros`);
         }
-
-        let mensagem = '';
-        if (diffDays > 0) {
-          mensagem = `⚠️ *Lembrete de Vencimento*\n\nOlá ${client.name}!\n\nSeu plano IPTV vence em *${diffDays} dia(s)* (${dueDate.toLocaleDateString('pt-BR')}).\n\n💰 Valor: R$ ${parseFloat(invoice.amount).toFixed(2)}\n\nEvite o bloqueio do seu acesso!`;
-        } else if (diffDays === 0) {
-          mensagem = `🚨 *Vence Hoje!*\n\nOlá ${client.name}!\n\nSeu plano IPTV vence *HOJE*.\n\n💰 Valor: R$ ${parseFloat(invoice.amount).toFixed(2)}\n\nRegularize agora para não perder o sinal!`;
-        } else {
-          mensagem = `🛑 *Acesso Suspenso*\n\nOlá ${client.name}.\n\nSeu plano IPTV está vencido há *${Math.abs(diffDays)} dia(s)*.\n\n💰 Valor em aberto: R$ ${parseFloat(invoice.amount).toFixed(2)}\n\nRegularize agora para reativar seu acesso imediatamente!`;
-        }
-
-        const instanceName = process.env.EVOLUTION_INSTANCE_NAME || 'gestor-iptv';
-        const cleanPhone = client.phone.replace(/\D/g, '');
-
-        try {
-          const response = await fetch(`${process.env.EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
-            method: 'POST',
-            headers: {
-              'apikey': process.env.EVOLUTION_API_KEY!,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              number: cleanPhone,
-              text: mensagem,
-            }),
-          });
-
-          if (response.ok) {
-            enviados++;
-            console.log(`✅ Lembrete enviado para ${client.name}`);
-          } else {
-            const errData = await response.text();
-            console.error(`❌ Erro Evolution API para ${client.name}:`, errData);
-          }
-        } catch (err) {
-          console.error(`❌ Falha ao enviar mensagem para ${client.name}:`, err);
-        }
+      } catch (err: any) {
+        console.error(`❌ Erro ao executar ${type}:`, err.message);
+        results.errors++;
       }
     }
 
-    return NextResponse.json({ success: true, message: `${enviados} lembrete(s) enviado(s) com sucesso!` });
+    console.log('🎉 Automação concluída:', results);
+    return NextResponse.json({ success: true, results, executedAt: currentTime });
   } catch (error: any) {
     console.error('Erro na automação:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

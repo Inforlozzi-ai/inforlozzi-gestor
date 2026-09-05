@@ -10,43 +10,60 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from('iptv_clients')
-      .select('*')
+      .select('*, plan:iptv_plans(*), product:iptv_products(*)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json({ success: true, data }, {
-      headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' }
-    });
+
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log(' Criando cliente:', body);
-    
-    const { name, phone, email, xtream_username, xtream_password, status = 'active', panel_name, devices = [], expiration_date, photo_url, plan_name } = body;
+    const { devices, ...clientData } = body;
 
-    const { data, error } = await supabase
+    // 1. Inserir cliente
+    const { data: client, error: clientError } = await supabase
       .from('iptv_clients')
-      .insert({
-        name, phone, email, xtream_username, xtream_password, status,
-        panel_name, devices, expiration_date, photo_url, plan_name
-      })
+      .insert(clientData)
       .select()
       .single();
 
-    if (error) {
-      console.error('❌ Erro ao criar:', error);
-      throw error;
+    if (clientError) {
+      console.error('Erro ao criar cliente:', clientError);
+      return NextResponse.json({ 
+        success: false, 
+        error: clientError.message 
+      }, { status: 500 });
     }
-    
-    console.log('✅ Cliente criado:', data);
-    return NextResponse.json({ success: true, data });
+
+    // 2. Inserir dispositivos (se houver)
+    if (devices && devices.length > 0 && client?.id) {
+      const devicesToInsert = devices.map((d: any) => ({
+        client_id: client.id,
+        app_type: d.app_type || null,
+        app_url: d.app_url || null,
+        mac_address: d.mac_address || null,
+        connections: d.connections || 1
+      }));
+
+      const { error: devicesError } = await supabase
+        .from('client_devices')
+        .insert(devicesToInsert);
+
+      if (devicesError) {
+        console.error('Erro ao criar dispositivos:', devicesError);
+        // Não falha o cliente se só os dispositivos falharem
+      }
+    }
+
+    return NextResponse.json({ success: true, data: client });
   } catch (error: any) {
     console.error('Erro final:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

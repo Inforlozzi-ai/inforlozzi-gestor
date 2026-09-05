@@ -11,35 +11,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const body = await request.json();
     
-    console.log(' Atualizando cliente:', id, body);
+    const { id: productId, created_at, ...dataToSave } = body;
     
-    const { plan_id, updated_at, created_at, id: clientId, ...dataToSave } = body;
-    
-    // Corrigir fuso horário da data de vencimento
-    if (dataToSave.expiration_date) {
-      if (dataToSave.expiration_date.length === 10) {
-        dataToSave.expiration_date = `${dataToSave.expiration_date}T12:00:00.000Z`;
-      }
-    }
-    
-    console.log('📦 Dados limpos:', dataToSave);
+    const cleanData: any = {};
+    if (dataToSave.name !== undefined) cleanData.name = dataToSave.name;
+    if (dataToSave.description !== undefined) cleanData.description = dataToSave.description;
+    if (dataToSave.price !== undefined) cleanData.price = parseFloat(dataToSave.price) || 0;
+    if (dataToSave.active !== undefined) cleanData.active = dataToSave.active;
     
     const { data, error } = await supabase
-      .from('iptv_clients')
-      .update(dataToSave)
+      .from('iptv_products')
+      .update(cleanData)
       .eq('id', id)
       .select()
       .single();
 
-    if (error) {
-      console.error('❌ Erro:', error);
-      throw error;
-    }
-
-    console.log('✅ Sucesso:', data);
+    if (error) throw error;
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error('Erro final:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -47,7 +36,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { error } = await supabase.from('iptv_clients').delete().eq('id', id);
+    const { error } = await supabase.from('iptv_products').delete().eq('id', id);
     if (error) throw error;
     return NextResponse.json({ success: true });
   } catch (error: any) {

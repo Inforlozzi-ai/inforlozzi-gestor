@@ -1,251 +1,381 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, ArrowLeft, Plus, Trash2, Smartphone } from 'lucide-react';
-import Link from 'next/link';
-
-interface Device {
-  app_name: string;
-  mac_address: string;
-  device_id: string;
-}
+import { ArrowLeft, Save, Trash2, Plus, Smartphone } from 'lucide-react';
 
 export default function NewClientPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
+    photo_url: '',
+    plan_id: '',
+    product_id: '',
     xtream_username: '',
     xtream_password: '',
-    status: 'active',
-    panel_name: '',
-    devices: [] as Device[],
     expiration_date: '',
-    photo_url: ''
+    notes: '',
+    status: 'active',
+    active: true
   });
 
-  const [newDevice, setNewDevice] = useState<Device>({
-    app_name: '',
-    mac_address: '',
-    device_id: ''
-  });
+  // Array de dispositivos (pode ter vários)
+  const [devices, setDevices] = useState<any[]>([
+    { app_type: '', app_url: '', mac_address: '', connections: 1 }
+  ]);
 
-  const handleAddDevice = () => {
-    if (newDevice.app_name && (newDevice.mac_address || newDevice.device_id)) {
-      setFormData(prev => ({
-        ...prev,
-        devices: [...prev.devices, { ...newDevice }]
-      }));
-      setNewDevice({ app_name: '', mac_address: '', device_id: '' });
-    } else {
-      alert('Preencha pelo menos o nome do app e MAC ou ID');
+  useEffect(() => {
+    fetchPlans();
+    fetchProducts();
+  }, []);
+
+  const fetchPlans = async () => {
+    try {
+      const res = await fetch('/api/plans');
+      const data = await res.json();
+      if (data.success) setPlans(data.data);
+    } catch (err) {
+      console.error('Erro ao buscar planos:', err);
     }
   };
 
-  const handleRemoveDevice = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      devices: prev.devices.filter((_, i) => i !== index)
-    }));
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('/api/products');
+      const data = await res.json();
+      if (data.success) setProducts(data.data);
+    } catch (err) {
+      console.error('Erro ao buscar produtos:', err);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
     try {
+      const payload = {
+        ...formData,
+        devices // Enviar dispositivos junto
+      };
+
       const res = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
+
       if (data.success) {
-        alert('Cliente criado com sucesso!');
+        alert('✅ Cliente salvo com sucesso!');
         router.push('/clients');
       } else {
-        alert('Erro: ' + data.error);
+        alert('❌ Erro: ' + (data.error || 'Falha ao salvar'));
+        console.error('Erro detalhado:', data);
       }
     } catch (err) {
-      alert('Erro ao criar cliente');
+      alert('Erro de conexão: ' + (err as Error).message);
+      console.error('Erro:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <Link href="/clients" className="inline-flex items-center text-gray-400 hover:text-white transition">
-        <ArrowLeft className="w-5 h-5 mr-2" /> Voltar para Clientes
-      </Link>
-      
-      <div className="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
-        <h2 className="text-2xl font-bold flex items-center gap-2 mb-6 text-white">
-          <Users className="w-6 h-6 text-blue-400"/> Novo Cliente
-        </h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Foto */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Foto do Cliente (URL)</label>
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-gray-700 flex items-center justify-center border-2 border-gray-600 overflow-hidden">
-                {formData.photo_url ? (
-                  <img src={formData.photo_url} alt="Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <Users className="w-8 h-8 text-gray-500" />
-                )}
-              </div>
-              <input 
-                type="text" 
-                placeholder="https://..."
-                className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-                value={formData.photo_url}
-                onChange={e => setFormData({...formData, photo_url: e.target.value})}
-              />
-            </div>
-          </div>
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
 
-          {/* Nome e Telefone */}
+  // Adicionar novo dispositivo
+  const addDevice = () => {
+    setDevices([...devices, { app_type: '', app_url: '', mac_address: '', connections: 1 }]);
+  };
+
+  // Remover dispositivo
+  const removeDevice = (index: number) => {
+    if (devices.length > 1) {
+      const newDevices = devices.filter((_, i) => i !== index);
+      setDevices(newDevices);
+    }
+  };
+
+  // Atualizar dispositivo
+  const updateDevice = (index: number, field: string, value: string) => {
+    const newDevices = [...devices];
+    newDevices[index] = { ...newDevices[index], [field]: value };
+    setDevices(newDevices);
+  };
+
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto p-4">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => router.back()}
+          className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
+        >
+          <ArrowLeft className="w-5 h-5 text-white" />
+        </button>
+        <div>
+          <h1 className="text-3xl font-bold text-white">Novo Cliente</h1>
+          <p className="text-gray-400">Cadastre um novo cliente IPTV</p>
+        </div>
+      </div>
+
+      {/* Formulário */}
+      <form onSubmit={handleSubmit} className="bg-gray-800 rounded-xl border border-gray-700 p-6 space-y-6">
+        
+        {/* Dados Pessoais */}
+        <div>
+          <h2 className="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Dados Pessoais</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Nome Completo *</label>
-              <input type="text" required className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+              <input
+                type="text"
+                name="name"
+                required
+                value={formData.name}
+                onChange={handleChange}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Telefone *</label>
-              <input type="text" required placeholder="5511999999999" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+              <label className="block text-sm font-medium text-gray-300 mb-2">Telefone (WhatsApp) *</label>
+              <input
+                type="text"
+                name="phone"
+                required
+                value={formData.phone}
+                onChange={handleChange}
+                placeholder="5531999999999"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Email (opcional)</label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">URL da Foto</label>
+              <input
+                type="text"
+                name="photo_url"
+                value={formData.photo_url}
+                onChange={handleChange}
+                placeholder="https://..."
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              />
             </div>
           </div>
+        </div>
 
-          {/* Email */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">E-mail</label>
-            <input type="email" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-          </div>
-
-          {/* Usuário e Senha IPTV */}
+        {/* Plano e Painel */}
+        <div>
+          <h2 className="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Plano e Painel</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Plano</label>
+              <select
+                name="plan_id"
+                value={formData.plan_id}
+                onChange={handleChange}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">Selecione um plano</option>
+                {plans.map(plan => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} - R$ {plan.price} ({plan.duration_days} mês(es))
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Painel (Produto) *</label>
+              <select
+                name="product_id"
+                required
+                value={formData.product_id}
+                onChange={handleChange}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">Selecione um produto</option>
+                {products.map(product => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} - R$ {product.price}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Dispositivos Múltiplos */}
+        <div>
+          <div className="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Smartphone className="w-5 h-5" />
+              Dispositivos / Aplicativos
+            </h2>
+            <button
+              type="button"
+              onClick={addDevice}
+              className="flex items-center gap-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar Dispositivo
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {devices.map((device, index) => (
+              <div key={index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-gray-300">Dispositivo {index + 1}</span>
+                  {devices.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeDevice(index)}
+                      className="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Tipo de Aplicativo</label>
+                    <select
+                      value={device.app_type}
+                      onChange={(e) => updateDevice(index, 'app_type', e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">Selecione</option>
+                      <option value="smarters">IPTV Smarters Pro</option>
+                      <option value="tivimate">TiviMate</option>
+                      <option value="xciptv">XCIPTV Player</option>
+                      <option value="iptvextreme">IPTV Extreme</option>
+                      <option value="netiptv">Net IPTV</option>
+                      <option value="ssiptv">SS IPTV</option>
+                      <option value="other">Outro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">MAC Address</label>
+                    <input
+                      type="text"
+                      value={device.mac_address}
+                      onChange={(e) => updateDevice(index, 'mac_address', e.target.value)}
+                      placeholder="00:1A:79:XX:XX:XX"
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">URL do App</label>
+                    <input
+                      type="text"
+                      value={device.app_url}
+                      onChange={(e) => updateDevice(index, 'app_url', e.target.value)}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Conexões</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={device.connections}
+                      onChange={(e) => updateDevice(index, 'connections', e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Credenciais e Vencimento */}
+        <div>
+          <h2 className="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Credenciais e Vencimento</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Usuário IPTV</label>
-              <input type="text" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none" value={formData.xtream_username} onChange={e => setFormData({...formData, xtream_username: e.target.value})} />
+              <input
+                type="text"
+                name="xtream_username"
+                value={formData.xtream_username}
+                onChange={handleChange}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Senha IPTV</label>
-              <input type="text" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none" value={formData.xtream_password} onChange={e => setFormData({...formData, xtream_password: e.target.value})} />
-            </div>
-          </div>
-
-          {/* Painel e Vencimento */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Nome do Painel</label>
-              <input 
-                type="text" 
-                placeholder="Ex: Xtream Codes, Stalker, etc."
+              <input
+                type="text"
+                name="xtream_password"
+                value={formData.xtream_password}
+                onChange={handleChange}
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-                value={formData.panel_name}
-                onChange={e => setFormData({...formData, panel_name: e.target.value})}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Data de Vencimento</label>
-              <input type="date" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none" value={formData.expiration_date} onChange={e => setFormData({...formData, expiration_date: e.target.value})} />
+              <input
+                type="date"
+                name="expiration_date"
+                value={formData.expiration_date}
+                onChange={handleChange}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+              />
             </div>
           </div>
+        </div>
 
-          {/* Dispositivos/Apps */}
-          <div className="border border-gray-600 rounded-lg p-4 bg-gray-700/30">
-            <label className="block text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
-              <Smartphone className="w-4 h-4" />
-              Dispositivos/Apps (Adicione quantos quiser)
-            </label>
-            
-            {/* Lista de dispositivos adicionados */}
-            {formData.devices.length > 0 && (
-              <div className="space-y-2 mb-4">
-                {formData.devices.map((device, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg border border-gray-600">
-                    <div className="flex-1">
-                      <p className="text-white font-medium">{device.app_name}</p>
-                      <p className="text-xs text-gray-400">
-                        {device.mac_address && `MAC: ${device.mac_address}`}
-                        {device.mac_address && device.device_id && ' | '}
-                        {device.device_id && `ID: ${device.device_id}`}
-                      </p>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => handleRemoveDevice(index)}
-                      className="ml-4 text-red-400 hover:text-red-300"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* Observações */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Observações</label>
+          <textarea
+            name="notes"
+            rows={3}
+            value={formData.notes}
+            onChange={handleChange}
+            className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+          />
+        </div>
 
-            {/* Formulário para adicionar novo dispositivo */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <input 
-                type="text" 
-                placeholder="Nome do App (Ex: Smart TV)"
-                className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
-                value={newDevice.app_name}
-                onChange={e => setNewDevice({...newDevice, app_name: e.target.value})}
-              />
-              <input 
-                type="text" 
-                placeholder="MAC Address"
-                className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
-                value={newDevice.mac_address}
-                onChange={e => setNewDevice({...newDevice, mac_address: e.target.value})}
-              />
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="Device ID"
-                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
-                  value={newDevice.device_id}
-                  onChange={e => setNewDevice({...newDevice, device_id: e.target.value})}
-                />
-                <button 
-                  type="button"
-                  onClick={handleAddDevice}
-                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg transition"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Status */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
-            <select 
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
-              value={formData.status}
-              onChange={e => setFormData({...formData, status: e.target.value})}
-            >
-              <option value="active">Ativo</option>
-              <option value="inactive">Inativo</option>
-              <option value="suspended">Suspenso</option>
-              <option value="trial">Teste</option>
-            </select>
-          </div>
-          
-          <button 
-            type="submit" 
-            disabled={loading} 
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold mt-4"
+        {/* Botões */}
+        <div className="flex gap-4">
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-semibold"
           >
+            <Save className="w-5 h-5" />
             {loading ? 'Salvando...' : 'Salvar Cliente'}
           </button>
-        </form>
-      </div>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold"
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
